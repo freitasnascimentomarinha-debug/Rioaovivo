@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import folium
 import streamlit as st
-import streamlit.components.v1 as components
 from branca.element import MacroElement
 from jinja2 import Template
 from streamlit_folium import st_folium
@@ -48,8 +47,11 @@ def transito(lat: float, lon: float, nome: str, rio: bool = False):
     style.titulo("🚦 Trânsito ao vivo")
     zoom = st.slider("Zoom", 9, 16, 12, key="zoom_waze")
     url = f"https://embed.waze.com/iframe?zoom={zoom}&lat={lat}&lon={lon}&ct=livemap"
-    components.html(f'<iframe src="{url}" width="100%" height="560" style="border:0;border-radius:20px" '
-                    f'allowfullscreen loading="lazy"></iframe>', height=570)
+    if hasattr(st, "iframe"):
+        st.iframe(url, height=560)
+    else:  # Streamlit mais antigo
+        import streamlit.components.v1 as components
+        components.iframe(url, height=560)
     c1, c2, c3 = st.columns(3)
     c1.link_button("🗺️ Google Maps (trânsito)", f"https://www.google.com/maps/@{lat},{lon},12z/data=!5m1!1e1", width="stretch")
     c2.link_button("🚗 Abrir no Waze", f"https://www.waze.com/live-map/directions?latlng={lat}%2C{lon}", width="stretch")
@@ -159,11 +161,17 @@ def onibus(lat: float, lon: float):
     with k[2]:
         style.kpi("🐢", "Lentos ou parados", f"{len(lentos) / len(df) * 100:.0f}", "%", "≤ 5 km/h (inclui pontos e garagens)")
     st.write("")
-    linhas = sorted(df["servico"].dropna().unique())
-    escolha = st.multiselect("Acompanhar linhas específicas (opcional)", linhas, max_selections=5, placeholder="Ex.: 485, 2336, SV...")
+    texto = st.text_input("Acompanhar linhas (opcional)", placeholder="Digite o número, ex.: 485 ou 485, 2336 — e tecle Enter",
+                          key="linhas_onibus")
+    pedidas = [t.strip().upper() for t in texto.replace(";", ",").split(",") if t.strip()][:5]
+    disponiveis = set(df["servico"].dropna().astype(str).str.upper())
+    escolha = [p for p in pedidas if p in disponiveis]
+    nao_achadas = [p for p in pedidas if p not in disponiveis]
+    if nao_achadas:
+        st.caption(f"⚠️ Linha(s) sem ônibus rodando agora: {', '.join(nao_achadas)}")
     m = mapa_base(lat if -23.2 < lat < -22.6 else -22.92, lon if -43.9 < lon < -43.0 else -43.3, 11)
     if escolha:
-        for _, r in df[df["servico"].isin(escolha)].iterrows():
+        for _, r in df[df["servico"].astype(str).str.upper().isin(escolha)].iterrows():
             folium.CircleMarker([r["lat"], r["lon"]], radius=6, color="#38bdf8", fill=True, fill_opacity=.9,
                                 tooltip=f'Linha {r["servico"]} · {r["velocidade"]:.0f} km/h').add_to(m)
     else:
@@ -174,32 +182,3 @@ def onibus(lat: float, lon: float):
     st.caption(f"Fonte: GPS dos ônibus (SPPO) — dados.mobilidade.rio · posição mais recente há ~{idade:.0f} s. "
                "O mapa de calor mostra onde há ônibus lentos/parados, um **indicador indireto** de congestionamento: "
                "também aparecem terminais, pontos e garagens.")
-
-
-# ----------------------------------------------------------------------------- Queimadas
-def queimadas(lat: float, lon: float, uf: str):
-    style.titulo(f"🔥 Focos de calor detectados por satélite — {uf}")
-    try:
-        df = data.queimadas(uf)
-    except Exception as e:  # noqa: BLE001
-        st.warning("Não foi possível carregar os focos do INPE agora.")
-        st.caption(str(e))
-        return
-    k = st.columns(3)
-    with k[0]:
-        style.kpi("🔥", "Focos (hoje + ontem)", str(len(df)), "", data.ESTADOS.get(uf, uf).title())
-    with k[1]:
-        top = df["municipio"].value_counts()
-        style.kpi("📍", "Município com mais focos", top.index[0].title() if len(top) else "—", "", f"{top.iloc[0]} foco(s)" if len(top) else "")
-    with k[2]:
-        style.kpi("⚡", "Maior intensidade (FRP)", f"{df['frp'].max():.0f}" if len(df) else "—", "MW", "Potência radiativa do fogo")
-    st.write("")
-    m = mapa_base(lat, lon, 8)
-    for _, r in df.iterrows():
-        folium.CircleMarker([r["lat"], r["lon"]], radius=5 + min((r["frp"] or 0) / 40, 8), color="#fb923c", fill=True, fill_opacity=.6,
-                            tooltip=f'{str(r["municipio"]).title()} · {r["data_hora_gmt"]:%d/%m %H:%M} UTC · FRP {r["frp"]}').add_to(m)
-    st_folium(m, height=500, width="stretch", returned_objects=[], key="mapa-fogo")
-    if df.empty:
-        st.success("Nenhum foco de calor detectado no estado nas últimas 48 h. 🌿")
-    st.caption("Fonte: INPE — Programa Queimadas (satélites de referência). Um foco indica calor na superfície, não necessariamente incêndio. "
-               "Em emergência: Bombeiros 193 · Defesa Civil 199.")

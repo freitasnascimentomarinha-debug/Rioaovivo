@@ -302,7 +302,7 @@ def tiroteios(email: str, senha: str, uf: str = "RJ", dias: int = 7) -> list[dic
     return out
 
 
-# ----------------------------------------------------------------------------- Ônibus (Rio) e queimadas (INPE)
+# ----------------------------------------------------------------------------- Ônibus (Rio)
 @st.cache_data(ttl=120, show_spinner=False)
 def onibus() -> pd.DataFrame:
     """Última posição GPS de cada ônibus do Rio (SPPO) nos últimos 3 minutos — dados.mobilidade.rio."""
@@ -317,35 +317,3 @@ def onibus() -> pd.DataFrame:
     df["datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce")
     df = df.sort_values("datetime").drop_duplicates("id_veiculo", keep="last")
     return df.rename(columns={"latitude": "lat", "longitude": "lon"}).reset_index(drop=True)
-
-
-ESTADOS = {"AC": "ACRE", "AL": "ALAGOAS", "AP": "AMAPÁ", "AM": "AMAZONAS", "BA": "BAHIA", "CE": "CEARÁ",
-           "DF": "DISTRITO FEDERAL", "ES": "ESPÍRITO SANTO", "GO": "GOIÁS", "MA": "MARANHÃO", "MT": "MATO GROSSO",
-           "MS": "MATO GROSSO DO SUL", "MG": "MINAS GERAIS", "PA": "PARÁ", "PB": "PARAÍBA", "PR": "PARANÁ",
-           "PE": "PERNAMBUCO", "PI": "PIAUÍ", "RJ": "RIO DE JANEIRO", "RN": "RIO GRANDE DO NORTE",
-           "RS": "RIO GRANDE DO SUL", "RO": "RONDÔNIA", "RR": "RORAIMA", "SC": "SANTA CATARINA",
-           "SP": "SÃO PAULO", "SE": "SERGIPE", "TO": "TOCANTINS"}
-
-
-@st.cache_data(ttl=3 * 3600, show_spinner=False)
-def queimadas(uf: str) -> pd.DataFrame:
-    """Focos de calor detectados por satélite (INPE/BDQueimadas) hoje e ontem, filtrados por estado."""
-    estado = ESTADOS.get(uf.upper(), "")
-    partes = []
-    for dias in (0, 1):
-        dia = (datetime.now(timezone.utc) - timedelta(days=dias)).strftime("%Y%m%d")
-        url = f"https://dataserver-coids.inpe.br/queimadas/queimadas/focos/csv/diario/Brasil/focos_diario_br_{dia}.csv"
-        try:
-            r = requests.get(url, headers=HEADERS, timeout=60)
-            if r.status_code != 200:
-                continue
-            from io import StringIO
-            df = pd.read_csv(StringIO(r.text), usecols=["lat", "lon", "data_hora_gmt", "municipio", "estado", "frp", "risco_fogo"])
-            partes.append(df[df["estado"].str.upper() == estado])
-        except requests.RequestException:
-            continue
-    if not partes:
-        raise RuntimeError("Arquivo de focos indisponível no momento.")
-    out = pd.concat(partes).drop_duplicates(["lat", "lon", "data_hora_gmt"])
-    out["data_hora_gmt"] = pd.to_datetime(out["data_hora_gmt"], utc=True, errors="coerce")
-    return out.sort_values("data_hora_gmt", ascending=False).reset_index(drop=True)

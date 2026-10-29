@@ -160,7 +160,7 @@ def painel():
     st.write("")
 
     tabs = st.tabs(["📈 Previsão", "🌧️ Chuva & Vento", "🌊 Maré", "🌙 Sol & Lua", "🚨 Alertas", "🗺️ Mapa",
-                    "🚦 Trânsito", "⛈️ Alagamentos", "🛡️ Segurança", "🔥 Queimadas"])
+                    "🚦 Trânsito", "⛈️ Alagamentos", "🛡️ Segurança"])
 
     # ---------------- Previsão
     with tabs[0]:
@@ -411,8 +411,6 @@ def painel():
             cid.seguranca(lat, lon, uf)
         else:
             st.info("A camada de tiroteios (Fogo Cruzado) cobre a Região Metropolitana do Rio de Janeiro.")
-    with tabs[9]:
-        cid.queimadas(lat, lon, uf)
 
     st.markdown(f'<div class="footer">Rio ao Vivo · dados atualizados às {agora:%H:%M:%S} · Open-Meteo · RainViewer · INMET via <a href="https://radarmeteorologico.com.br" style="color:inherit">RadarMeteorológico</a></div>',
                 unsafe_allow_html=True)

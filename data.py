@@ -125,6 +125,12 @@ def radar() -> dict:
     return {"host": js["host"], "frames": frames}
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def municipios_uf(uf: str) -> dict[int, str]:
+    js = _get("https://radarmeteorologico.com.br/api/v1/cidades", {"uf": uf}, timeout=20)
+    return {c["ibge"]: c["nome"] for c in js.get("cidades", [])}
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def alertas(uf: str, ibge: int | None = None) -> list[dict]:
     """Avisos oficiais do INMET (base dos alertas da Defesa Civil) via API pública do RadarMeteorológico."""
@@ -140,6 +146,7 @@ def alertas(uf: str, ibge: int | None = None) -> list[dict]:
             "riscos": a.get("riscos") or [], "instrucoes": a.get("instrucoes") or [],
             "municipios": a.get("municipios_afetados") or 0,
             "url": a.get("url") or "",
+            "geocodes": set(a.get("geocodes") or []),
             "atinge_local": bool(ibge and ibge in (a.get("geocodes") or [])),
         })
     saida.sort(key=lambda x: (not x["atinge_local"], x["futuro"], -x["nivel"]))

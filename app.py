@@ -97,15 +97,22 @@ def painel():
         avisos_ok = True
     except Exception:  # noqa: BLE001
         avisos, avisos_ok = [], False
-    locais = [x for x in avisos if x["atinge_local"] and not x["futuro"]]
+    try:
+        nomes_mun = data.municipios_uf(uf)
+    except Exception:  # noqa: BLE001
+        nomes_mun = {}
+    cidade = nomes_mun.get(ibge) or (nome.split("·")[0].strip() if ibge else "sua cidade")
+    agora_av = [x for x in avisos if not x["futuro"]]
+    locais = [x for x in agora_av if x["atinge_local"]]
     if locais:
         mais = max(locais, key=lambda x: x["nivel"])
-        st.markdown(f'<div class="alert" style="--c:#ef4444"><span class="badge">ALERTA NA SUA CIDADE</span>'
-                    f'<b>{mais["titulo"]} · {mais["severidade"]}</b> até {mais["fim"]} — veja a aba “Alertas”.</div>',
+        extra = f" (+{len(locais) - 1})" if len(locais) > 1 else ""
+        st.markdown(f'<div class="alert" style="--c:#ef4444"><span class="badge">⚠️ {cidade.upper()} EM ALERTA</span>'
+                    f'<b>{mais["titulo"]} · {mais["severidade"]}</b>{extra} até {mais["fim"][-5:]} — veja a aba “Alertas”.</div>',
                     unsafe_allow_html=True)
-    elif avisos:
-        st.markdown(f'<div class="alert" style="--c:#fbbf24"><span class="badge">AVISOS</span>'
-                    f'<b>{len(avisos)} aviso(s) no estado ({uf})</b> — veja a aba “Alertas”.</div>', unsafe_allow_html=True)
+    elif ibge and avisos_ok:
+        st.markdown(f'<div class="alert ok"><span class="badge">✅ SEM ALERTA</span>'
+                    f'<b>{cidade}</b> não está em nenhum aviso em vigor agora.</div>', unsafe_allow_html=True)
 
     # --- KPIs
     try:
@@ -297,25 +304,61 @@ def painel():
     with tabs[4]:
         style.titulo(f"🚨 Avisos meteorológicos — {uf}")
         cores = {"perigo potencial": "#fbbf24", "perigo": "#fb923c", "grande perigo": "#ef4444"}
+
+        def fmt(s: str) -> str:  # 2026-10-29 09:00 -> 29/10 09:00
+            try:
+                return datetime.strptime(s, "%Y-%m-%d %H:%M").strftime("%d/%m %H:%M")
+            except ValueError:
+                return s
+
         if not avisos_ok:
             st.warning("Não foi possível consultar os avisos agora. Consulte também o app **Defesa Civil Alerta** "
                        "(SMS **40199**) e o **Alerta Rio** (alertario.rio.rj.gov.br).")
-        elif not avisos:
-            st.markdown('<div class="alert ok"><span class="badge">OK</span><b>Nenhum aviso ativo</b> do INMET para o estado '
-                        f'{uf} neste momento.</div>', unsafe_allow_html=True)
-        for a in avisos:
-            cor = cores.get(a["severidade"].lower(), "#fb923c")
-            tag = "📍 Atinge sua cidade · " if a["atinge_local"] else ""
-            quando = "🔜 Previsto" if a["futuro"] else "🕒 Em vigor"
-            st.markdown(f"""<div class="alert" style="--c:{cor}"><div class="h"><span class="badge">{a['severidade'] or 'AVISO'}</span>{a['titulo']}</div>
-                <div class="m">{tag}{quando}: {a['inicio']} → {a['fim']} · {a['municipios']} municípios</div>
-                <div class="m">{' '.join(a['riscos'][:1])}</div></div>""", unsafe_allow_html=True)
-            if a["instrucoes"]:
-                with st.expander("Orientações de segurança"):
-                    for x in a["instrucoes"]:
-                        st.write("•", x)
-                    if a["url"]:
-                        st.markdown(f"[Ver aviso completo]({a['url']})")
+        else:
+            if ibge:
+                if locais:
+                    resumo = " · ".join(f'{x["titulo"]} ({x["severidade"]})' for x in locais)
+                    st.markdown(f'<div class="alert" style="--c:#ef4444"><div class="h">⚠️ {cidade} ESTÁ em alerta agora</div>'
+                                f'<div class="m">{resumo}</div></div>', unsafe_allow_html=True)
+                else:
+                    prox = [x for x in avisos if x["futuro"] and x["atinge_local"]]
+                    extra = (f" Há {len(prox)} aviso(s) previsto(s) para os próximos dias que incluem {cidade}." if prox else "")
+                    st.markdown(f'<div class="alert ok"><div class="h">✅ {cidade} NÃO está em nenhum aviso em vigor agora</div>'
+                                f'<div class="m">Os avisos abaixo valem para outras cidades de {uf}.{extra}</div></div>',
+                                unsafe_allow_html=True)
+            if not avisos:
+                st.info(f"Nenhum aviso ativo do INMET para {uf} neste momento.")
+
+            def cartao(a: dict):
+                cor = cores.get(a["severidade"].lower(), "#fb923c")
+                if ibge:
+                    pill = (f'<span class="badge" style="background:#ef4444;color:#fff">📍 ATINGE {cidade.upper()}</span>'
+                            if a["atinge_local"] else
+                            f'<span class="badge" style="background:#334155;color:#cbd5e1">NÃO atinge {cidade}</span>')
+                else:
+                    pill = ""
+                ativos = [nomes_mun[g] for g in a["geocodes"] if g in nomes_mun]
+                dim = "" if (a["atinge_local"] or not ibge) else "opacity:.6;"
+                st.markdown(f"""<div class="alert" style="--c:{cor};{dim}"><div style="margin-bottom:8px">{pill}</div>
+                    <div class="h"><span class="badge">{a['severidade'] or 'AVISO'}</span>{a['titulo']}</div>
+                    <div class="m">{'🔜 Previsto' if a['futuro'] else '🕒 Em vigor'}: {fmt(a['inicio'])} → {fmt(a['fim'])}
+                    · {len(ativos)} de {len(nomes_mun) or '—'} municípios de {uf} (Brasil: {a['municipios']})</div>
+                    <div class="m">{' '.join(a['riscos'][:1])}</div></div>""", unsafe_allow_html=True)
+                if ativos:
+                    with st.expander(f"Municípios de {uf} neste aviso ({len(ativos)})"):
+                        st.write(", ".join(sorted(ativos)))
+                if a["instrucoes"]:
+                    with st.expander("Orientações de segurança"):
+                        for x in a["instrucoes"]:
+                            st.write("•", x)
+                        if a["url"]:
+                            st.markdown(f"[Ver aviso completo]({a['url']})")
+
+            for titulo_sec, lista in (("🕒 Em vigor agora", agora_av), ("🔜 Previstos", [x for x in avisos if x["futuro"]])):
+                if lista:
+                    st.markdown(f"##### {titulo_sec}")
+                    for a in lista:
+                        cartao(a)
         st.info("📱 Cadastre-se no alerta por SMS da Defesa Civil: envie seu **CEP** para **40199**. Emergência: **199**.")
 
     # ---------------- Mapa

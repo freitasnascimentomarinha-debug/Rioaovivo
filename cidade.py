@@ -1,6 +1,9 @@
 """Abas 'Cidade ao vivo': trânsito, chuva/alagamentos e segurança."""
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import folium
 import streamlit as st
 from branca.element import MacroElement
@@ -123,20 +126,72 @@ def seguranca(lat: float, lon: float, uf: str):
         st.warning("Não foi possível consultar o Fogo Cruzado agora.")
         st.caption(f"{type(e).__name__}: {e}")
         return
-    k = st.columns(3)
+    com_mortos = [o for o in ocs if o["mortos"]]
+    k = st.columns(4)
     with k[0]:
-        style.kpi("💥", "Ocorrências", str(len(ocs)), "", f"Últimos {dias} dia(s)")
+        style.kpi("💥", "Tiroteios", str(len(ocs)), "", f"Últimos {dias} dia(s)")
     with k[1]:
-        style.kpi("🚓", "Com ação policial", str(sum(o["policia"] for o in ocs)))
+        style.kpi("🩸", "Com feridos", str(sum(1 for o in ocs if o["feridos"])), "", f"{sum(o['feridos'] for o in ocs)} pessoa(s)")
     with k[2]:
-        style.kpi("⚠️", "Com mortes", str(sum(1 for o in ocs if o["mortos"])))
+        style.kpi("⚠️", "Com mortes", str(len(com_mortos)), "", f"{sum(o['mortos'] for o in com_mortos)} pessoa(s)")
+    with k[3]:
+        style.kpi("🚓", "Ação policial", str(sum(o["policia"] for o in ocs)), "", "Operações / presença de agentes")
     st.write("")
+
+    filtro = st.segmented_control("Mostrar", ["Todos", "Com mortes", "Com feridos", "Sem vítimas", "Ação policial"],
+                                  default="Todos", key="filtro_tiro") or "Todos"
+    teste = {"Todos": lambda o: True, "Com mortes": lambda o: o["mortos"], "Com feridos": lambda o: o["feridos"],
+             "Sem vítimas": lambda o: not o["vitimas"], "Ação policial": lambda o: o["policia"]}[filtro]
+    vis = [o for o in ocs if teste(o)]
+
+    def classe(o):
+        if o["chacina"]:
+            return "Chacina", "#a855f7"
+        if o["mortos"]:
+            return "Com morte(s)", "#ef4444"
+        if o["feridos"]:
+            return "Com ferido(s)", "#fb923c"
+        return "Sem vítimas", "#facc15"
+
+    def fmt_data(s):
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(ZoneInfo(data.TZ)).strftime("%d/%m/%Y %H:%M")
+        except ValueError:
+            return s[:16].replace("T", " ")
+
     m = mapa_base(lat, lon, 10)
-    for o in ocs:
-        folium.CircleMarker([o["lat"], o["lon"]], radius=6, color="#f87171", fill=True, fill_opacity=.6,
-                            tooltip=f'{o["data"][:16].replace("T", " ")} · {o["bairro"] or o["cidade"]}<br>{o["endereco"]}').add_to(m)
-    st_folium(m, height=520, width="stretch", returned_objects=[], key="mapa-seg")
-    st.caption("Fonte: Fogo Cruzado (fogocruzado.org.br). Dados registrados e verificados pela organização; podem ter atraso.")
+    for o in vis:
+        tipo, cor = classe(o)
+        linhas = [f'<div style="font-weight:700;font-size:14px;color:{cor}">{tipo}{" · 🚓 ação policial" if o["policia"] else ""}</div>',
+                  f'<div style="opacity:.8">{fmt_data(o["data"])}</div>',
+                  f'<div>📍 {o["endereco"] or "—"}<br>{o["bairro"]}{" · " if o["bairro"] and o["cidade"] else ""}{o["cidade"]}</div>']
+        if o["motivo"]:
+            linhas.append(f'<div><b>Motivo:</b> {o["motivo"]}{" (" + o["motivos_compl"] + ")" if o["motivos_compl"] else ""}</div>')
+        if o["unidade"]:
+            linhas.append(f'<div><b>Unidade:</b> {o["unidade"]}</div>')
+        if o["detalhes"]:
+            linhas.append("<div><b>Vítimas:</b><br>" + "<br>".join("• " + x for x in o["detalhes"][:8]) + "</div>")
+        else:
+            linhas.append("<div><b>Vítimas:</b> nenhuma registrada</div>")
+        html = '<div style="font:12px Inter,sans-serif;line-height:1.5;min-width:210px;max-width:290px">' + "".join(linhas) + "</div>"
+        folium.CircleMarker([o["lat"], o["lon"]], radius=6 + 3 * min(o["mortos"] + o["feridos"], 4),
+                            color="#ffffff" if o["policia"] else cor, weight=2 if o["policia"] else 1, fill=True, fill_color=cor,
+                            fill_opacity=.75, popup=folium.Popup(html, max_width=300),
+                            tooltip=f'{tipo} · {o["bairro"] or o["cidade"]}').add_to(m)
+    st_folium(m, height=520, width="stretch", returned_objects=[], key=f"mapa-seg-{filtro}-{dias}")
+    st.markdown('<span style="font-size:.82rem;opacity:.75">🟡 sem vítimas · 🟠 com ferido(s) · 🔴 com morte(s) · 🟣 chacina · '
+                'contorno branco = ação policial · clique no ponto para ver os detalhes</span>', unsafe_allow_html=True)
+
+    if vis:
+        import pandas as pd
+        tabela = pd.DataFrame([{"Data": fmt_data(o["data"]), "Tipo": classe(o)[0], "Bairro": o["bairro"], "Cidade": o["cidade"],
+                                "Motivo": o["motivo"], "Mortos": o["mortos"], "Feridos": o["feridos"],
+                                "Ação policial": "Sim" if o["policia"] else "Não"} for o in vis])
+        with st.expander(f"📋 Lista das ocorrências ({len(vis)})"):
+            st.dataframe(tabela, hide_index=True, width="stretch")
+        with st.expander("🧪 Dados brutos (primeira ocorrência) — para diagnóstico"):
+            st.json(vis[0]["bruto"])
+    st.caption("O Fogo Cruzado registra **tiroteios** e suas vítimas; assaltos e outros crimes não fazem parte dessa base. Fonte: Fogo Cruzado (fogocruzado.org.br). Dados registrados e verificados pela organização; podem ter atraso.")
 
 
 # ----------------------------------------------------------------------------- Ônibus

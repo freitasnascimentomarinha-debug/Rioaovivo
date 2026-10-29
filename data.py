@@ -273,6 +273,31 @@ def intensidade_chuva(mmh: float) -> tuple[str, str]:
     return "Muito forte", "#ef4444"
 
 
+def _txt(x) -> str:
+    """Extrai texto legível de campos que podem vir como str, dict ({name}) ou lista."""
+    if x is None or x is False:
+        return ""
+    if isinstance(x, str):
+        return x.strip()
+    if isinstance(x, dict):
+        for k in ("name", "title", "description", "label", "type"):
+            if x.get(k):
+                return _txt(x[k])
+        return ""
+    if isinstance(x, (list, tuple, set)):
+        return ", ".join(t for t in (_txt(i) for i in x) if t)
+    return str(x)
+
+
+def _situacao(v: dict) -> str:
+    s = _txt(v.get("situation") or v.get("status")).lower()
+    if any(k in s for k in ("dead", "morto", "morte", "óbito", "obito")):
+        return "morto"
+    if any(k in s for k in ("wounded", "ferido", "injured")):
+        return "ferido"
+    return s or "vítima"
+
+
 @st.cache_data(ttl=600, show_spinner=False)
 def tiroteios(email: str, senha: str, dias: int = 7) -> list[dict]:
     """Ocorrências de tiroteio no estado do Rio — API Fogo Cruzado v2 (exige cadastro gratuito)."""
@@ -297,12 +322,28 @@ def tiroteios(email: str, senha: str, dias: int = 7) -> list[dict]:
         lote = js.get("data", [])
         for o in lote:
             try:
-                vit = o.get("victims") or []
-                out.append({"lat": float(o["latitude"]), "lon": float(o["longitude"]), "data": o.get("date", ""),
-                            "endereco": o.get("address", ""), "bairro": (o.get("neighborhood") or {}).get("name", ""),
-                            "cidade": (o.get("city") or {}).get("name", ""), "policia": bool(o.get("policeAction")),
-                            "mortos": sum(1 for v in vit if "dead" in str(v.get("situation", "")).lower()
-                                          or "morto" in str(v.get("situation", "")).lower())})
+                ctx = o.get("contextInfo") or {}
+                vit = [v for v in (o.get("victims") or []) if isinstance(v, dict)]
+                mortos = sum(1 for v in vit if _situacao(v) == "morto")
+                feridos = sum(1 for v in vit if _situacao(v) == "ferido")
+                detalhes = []
+                for v in vit:
+                    partes = [_situacao(v).capitalize(), _txt(v.get("gender") or v.get("sex")),
+                              (f"{v['age']} anos" if v.get("age") else ""),
+                              _txt(v.get("circumstances") or v.get("circumstance")),
+                              ("agente de segurança" if v.get("agentPosition") or v.get("agentStatus") or v.get("agentType") else "")]
+                    detalhes.append(" · ".join(p for p in partes if p))
+                massacre = bool(ctx.get("massacre"))
+                out.append({
+                    "lat": float(o["latitude"]), "lon": float(o["longitude"]), "data": o.get("date", ""),
+                    "endereco": o.get("address", ""), "bairro": _txt(o.get("neighborhood")) or _txt(o.get("locality")),
+                    "cidade": _txt(o.get("city")), "policia": bool(o.get("policeAction")),
+                    "agentes": bool(o.get("agentPresence")),
+                    "motivo": _txt(ctx.get("mainReason")), "motivos_compl": _txt(ctx.get("complementaryReasons")),
+                    "recortes": _txt(ctx.get("clippings")), "unidade": _txt(ctx.get("policeUnit")),
+                    "chacina": massacre, "mortos": mortos, "feridos": feridos, "vitimas": len(vit), "detalhes": detalhes,
+                    "bruto": o,
+                })
             except (KeyError, TypeError, ValueError):
                 continue
         if len(lote) < params["take"]:

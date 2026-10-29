@@ -40,7 +40,11 @@ def mapa_base(lat: float, lon: float, zoom: int) -> folium.Map:
 
 
 # ----------------------------------------------------------------------------- Trânsito
-def transito(lat: float, lon: float, nome: str):
+def transito(lat: float, lon: float, nome: str, rio: bool = False):
+    if rio:
+        modo = st.radio("Fonte", ["Waze ao vivo", "Ônibus do Rio (lentidão)"], horizontal=True, label_visibility="collapsed")
+        if modo != "Waze ao vivo":
+            return onibus(lat, lon)
     style.titulo("🚦 Trânsito ao vivo")
     zoom = st.slider("Zoom", 9, 16, 12, key="zoom_waze")
     url = f"https://embed.waze.com/iframe?zoom={zoom}&lat={lat}&lon={lon}&ct=livemap"
@@ -130,3 +134,72 @@ def seguranca(lat: float, lon: float, uf: str):
                             tooltip=f'{o["data"][:16].replace("T", " ")} · {o["bairro"] or o["cidade"]}<br>{o["endereco"]}').add_to(m)
     st_folium(m, height=520, width="stretch", returned_objects=[], key="mapa-seg")
     st.caption("Fonte: Fogo Cruzado (fogocruzado.org.br). Dados registrados e verificados pela organização; podem ter atraso.")
+
+
+# ----------------------------------------------------------------------------- Ônibus
+def onibus(lat: float, lon: float):
+    from folium.plugins import HeatMap
+    style.titulo("🚌 Ônibus em tempo real — lentidão estimada")
+    try:
+        df = data.onibus()
+    except Exception as e:  # noqa: BLE001
+        st.warning("Não foi possível carregar o GPS dos ônibus agora.")
+        st.caption(str(e))
+        return
+    if df.empty:
+        st.info("Sem posições recentes de ônibus neste momento.")
+        return
+    em_mov = df[df["velocidade"] > 0]
+    lentos = df[(df["velocidade"] <= 5)]
+    k = st.columns(3)
+    with k[0]:
+        style.kpi("🚌", "Ônibus rodando", f"{len(df):,}".replace(",", "."), "", f"{df['servico'].nunique()} linhas")
+    with k[1]:
+        style.kpi("⏱️", "Velocidade média", f"{em_mov['velocidade'].mean():.0f}", "km/h", "Só veículos em movimento")
+    with k[2]:
+        style.kpi("🐢", "Lentos ou parados", f"{len(lentos) / len(df) * 100:.0f}", "%", "≤ 5 km/h (inclui pontos e garagens)")
+    st.write("")
+    linhas = sorted(df["servico"].dropna().unique())
+    escolha = st.multiselect("Acompanhar linhas específicas (opcional)", linhas, max_selections=5, placeholder="Ex.: 485, 2336, SV...")
+    m = mapa_base(lat if -23.2 < lat < -22.6 else -22.92, lon if -43.9 < lon < -43.0 else -43.3, 11)
+    if escolha:
+        for _, r in df[df["servico"].isin(escolha)].iterrows():
+            folium.CircleMarker([r["lat"], r["lon"]], radius=6, color="#38bdf8", fill=True, fill_opacity=.9,
+                                tooltip=f'Linha {r["servico"]} · {r["velocidade"]:.0f} km/h').add_to(m)
+    else:
+        HeatMap(lentos[["lat", "lon"]].values.tolist(), radius=14, blur=18, min_opacity=.25,
+                gradient={0.3: "#facc15", 0.6: "#fb923c", 1.0: "#ef4444"}).add_to(m)
+    st_folium(m, height=520, width="stretch", returned_objects=[], key="mapa-bus")
+    idade = (data.datetime.now(data.timezone.utc) - df["datetime"].max()).total_seconds()
+    st.caption(f"Fonte: GPS dos ônibus (SPPO) — dados.mobilidade.rio · posição mais recente há ~{idade:.0f} s. "
+               "O mapa de calor mostra onde há ônibus lentos/parados, um **indicador indireto** de congestionamento: "
+               "também aparecem terminais, pontos e garagens.")
+
+
+# ----------------------------------------------------------------------------- Queimadas
+def queimadas(lat: float, lon: float, uf: str):
+    style.titulo(f"🔥 Focos de calor detectados por satélite — {uf}")
+    try:
+        df = data.queimadas(uf)
+    except Exception as e:  # noqa: BLE001
+        st.warning("Não foi possível carregar os focos do INPE agora.")
+        st.caption(str(e))
+        return
+    k = st.columns(3)
+    with k[0]:
+        style.kpi("🔥", "Focos (hoje + ontem)", str(len(df)), "", data.ESTADOS.get(uf, uf).title())
+    with k[1]:
+        top = df["municipio"].value_counts()
+        style.kpi("📍", "Município com mais focos", top.index[0].title() if len(top) else "—", "", f"{top.iloc[0]} foco(s)" if len(top) else "")
+    with k[2]:
+        style.kpi("⚡", "Maior intensidade (FRP)", f"{df['frp'].max():.0f}" if len(df) else "—", "MW", "Potência radiativa do fogo")
+    st.write("")
+    m = mapa_base(lat, lon, 8)
+    for _, r in df.iterrows():
+        folium.CircleMarker([r["lat"], r["lon"]], radius=5 + min((r["frp"] or 0) / 40, 8), color="#fb923c", fill=True, fill_opacity=.6,
+                            tooltip=f'{str(r["municipio"]).title()} · {r["data_hora_gmt"]:%d/%m %H:%M} UTC · FRP {r["frp"]}').add_to(m)
+    st_folium(m, height=500, width="stretch", returned_objects=[], key="mapa-fogo")
+    if df.empty:
+        st.success("Nenhum foco de calor detectado no estado nas últimas 48 h. 🌿")
+    st.caption("Fonte: INPE — Programa Queimadas (satélites de referência). Um foco indica calor na superfície, não necessariamente incêndio. "
+               "Em emergência: Bombeiros 193 · Defesa Civil 199.")

@@ -274,31 +274,40 @@ def intensidade_chuva(mmh: float) -> tuple[str, str]:
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def tiroteios(email: str, senha: str, uf: str = "RJ", dias: int = 7) -> list[dict]:
-    """Ocorrências de tiroteio — API Fogo Cruzado v2 (exige cadastro gratuito)."""
+def tiroteios(email: str, senha: str, dias: int = 7) -> list[dict]:
+    """Ocorrências de tiroteio no estado do Rio — API Fogo Cruzado v2 (exige cadastro gratuito)."""
     base = "https://api-service.fogocruzado.org.br/api/v2"
     r = requests.post(f"{base}/auth/login", json={"email": email, "password": senha}, headers=HEADERS, timeout=20)
+    if r.status_code in (400, 401, 403):
+        raise PermissionError("Credenciais do Fogo Cruzado recusadas (confira e-mail e senha nos Secrets).")
     r.raise_for_status()
     corpo = r.json()
     token = (corpo.get("data") or corpo).get("accessToken")
     auth = {**HEADERS, "Authorization": f"Bearer {token}"}
     estados = requests.get(f"{base}/states", headers=auth, timeout=20).json().get("data", [])
-    est = next((e for e in estados if uf.lower() in (e.get("name", "").lower(), e.get("abbreviation", "").lower())
-                or e.get("name", "").lower().startswith("rio")), None)
-    ini = (datetime.now(timezone.utc) - timedelta(days=dias)).strftime("%Y-%m-%d")
-    params = {"initialdate": ini, "finaldate": datetime.now(timezone.utc).strftime("%Y-%m-%d"), "take": 100, "order": "DESC"}
-    if est:
-        params["idState"] = est["id"]
-    js = requests.get(f"{base}/occurrences", params=params, headers=auth, timeout=30).json()
-    out = []
-    for o in js.get("data", []):
-        try:
-            out.append({"lat": float(o["latitude"]), "lon": float(o["longitude"]), "data": o.get("date", ""),
-                        "endereco": o.get("address", ""), "bairro": (o.get("neighborhood") or {}).get("name", ""),
-                        "cidade": (o.get("city") or {}).get("name", ""),
-                        "policia": bool(o.get("policeAction")), "mortos": len([v for v in o.get("victims", []) if "dead" in str(v.get("situation", "")).lower() or "morto" in str(v.get("situation", "")).lower()])})
-        except (KeyError, TypeError, ValueError):
-            continue
+    est = next((e for e in estados if "rio de janeiro" in str(e.get("name", "")).lower()), None)
+    if not est:
+        raise RuntimeError("Estado do Rio de Janeiro não encontrado na API do Fogo Cruzado.")
+    params = {"idState": est["id"], "typeOccurrence": "all", "take": 100, "order": "DESC",
+              "initialdate": (datetime.now(timezone.utc) - timedelta(days=dias)).strftime("%Y-%m-%d"),
+              "finaldate": (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")}
+    out, pagina = [], 1
+    while pagina <= 5:
+        js = requests.get(f"{base}/occurrences", params={**params, "page": pagina}, headers=auth, timeout=30).json()
+        lote = js.get("data", [])
+        for o in lote:
+            try:
+                vit = o.get("victims") or []
+                out.append({"lat": float(o["latitude"]), "lon": float(o["longitude"]), "data": o.get("date", ""),
+                            "endereco": o.get("address", ""), "bairro": (o.get("neighborhood") or {}).get("name", ""),
+                            "cidade": (o.get("city") or {}).get("name", ""), "policia": bool(o.get("policeAction")),
+                            "mortos": sum(1 for v in vit if "dead" in str(v.get("situation", "")).lower()
+                                          or "morto" in str(v.get("situation", "")).lower())})
+            except (KeyError, TypeError, ValueError):
+                continue
+        if len(lote) < params["take"]:
+            break
+        pagina += 1
     return out
 
 

@@ -106,21 +106,22 @@ def alagamentos():
 def seguranca(lat: float, lon: float, uf: str):
     style.titulo("🛡️ Tiroteios registrados — Fogo Cruzado")
     try:
-        email, senha = st.secrets["FOGOCRUZADO_EMAIL"], st.secrets["FOGOCRUZADO_SENHA"]
+        email = st.secrets["FOGOCRUZADO_EMAIL"]
+        senha = st.secrets["FOGOCRUZADO_PASSWORD"] if "FOGOCRUZADO_PASSWORD" in st.secrets else st.secrets["FOGOCRUZADO_SENHA"]
     except Exception:  # noqa: BLE001
         st.markdown(
             '<div class="glass"><b>Camada desativada</b><br><span style="opacity:.75">Ela usa a API pública do '
             '<a href="https://fogocruzado.org.br" target="_blank">Fogo Cruzado</a> (tiroteios na Região Metropolitana do Rio), '
-            'que exige cadastro gratuito. Adicione <code>FOGOCRUZADO_EMAIL</code> e <code>FOGOCRUZADO_SENHA</code> '
+            'que exige cadastro gratuito. Adicione <code>FOGOCRUZADO_EMAIL</code> e <code>FOGOCRUZADO_PASSWORD</code> '
             'em <i>Settings → Secrets</i> do app para ativar.</span></div>', unsafe_allow_html=True)
         st.caption("Não exibimos “mapa de facções” nem rótulos de “zonas perigosas”: não há fonte oficial confiável e isso estigmatiza moradores.")
         return
     try:
         dias = st.select_slider("Período", [1, 3, 7, 15, 30], value=7, format_func=lambda d: f"{d} dia(s)")
-        ocs = data.tiroteios(email, senha, "RJ", dias)
+        ocs = data.tiroteios(email, senha, dias)
     except Exception as e:  # noqa: BLE001
-        st.warning("Não foi possível consultar o Fogo Cruzado agora (verifique as credenciais nos secrets).")
-        st.caption(str(e))
+        st.warning("Não foi possível consultar o Fogo Cruzado agora.")
+        st.caption(f"{type(e).__name__}: {e}")
         return
     k = st.columns(3)
     with k[0]:

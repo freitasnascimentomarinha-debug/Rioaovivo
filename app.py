@@ -337,7 +337,7 @@ def painel():
                             f'<span class="badge" style="background:#334155;color:#cbd5e1">NÃO atinge {cidade}</span>')
                 else:
                     pill = ""
-                ativos = [nomes_mun[g] for g in a["geocodes"] if g in nomes_mun]
+                ativos = [nomes_mun[g] for g in a.get("geocodes", ()) if g in nomes_mun]
                 dim = "" if (a["atinge_local"] or not ibge) else "opacity:.6;"
                 st.markdown(f"""<div class="alert" style="--c:{cor};{dim}"><div style="margin-bottom:8px">{pill}</div>
                     <div class="h"><span class="badge">{a['severidade'] or 'AVISO'}</span>{a['titulo']}</div>

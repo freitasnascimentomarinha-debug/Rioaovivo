@@ -132,7 +132,7 @@ def municipios_uf(uf: str) -> dict[int, str]:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def alertas(uf: str, ibge: int | None = None) -> list[dict]:
+def alertas(uf: str, ibge: int | None = None, _v: int = 2) -> list[dict]:  # _v invalida cache antigo
     """Avisos oficiais do INMET (base dos alertas da Defesa Civil) via API pública do RadarMeteorológico."""
     js = _get("https://radarmeteorologico.com.br/api/v1/alertas", {"uf": uf}, timeout=20)
     saida = []

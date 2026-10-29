@@ -347,12 +347,6 @@ def painel():
                 if ativos:
                     with st.expander(f"Municípios de {uf} neste aviso ({len(ativos)})"):
                         st.write(", ".join(sorted(ativos)))
-                if a["instrucoes"]:
-                    with st.expander("Orientações de segurança"):
-                        for x in a["instrucoes"]:
-                            st.write("•", x)
-                        if a["url"]:
-                            st.markdown(f"[Ver aviso completo]({a['url']})")
 
             for titulo_sec, lista in (("🕒 Em vigor agora", agora_av), ("🔜 Previstos", [x for x in avisos if x["futuro"]])):
                 if lista:

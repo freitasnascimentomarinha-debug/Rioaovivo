@@ -11,18 +11,18 @@ import streamlit as st
 TZ = "America/Sao_Paulo"
 HEADERS = {"User-Agent": "RioAoVivo/1.0 (streamlit)"}
 
-# nome -> (lat, lon, lat_mar, lon_mar, UF)
-LOCAIS: dict[str, tuple[float, float, float, float, str]] = {
-    "Rio de Janeiro · Copacabana": (-22.971, -43.186, -23.05, -43.17, "RJ"),
-    "Rio de Janeiro · Barra da Tijuca": (-23.012, -43.32, -23.10, -43.32, "RJ"),
-    "Rio de Janeiro · Centro": (-22.906, -43.173, -23.05, -43.17, "RJ"),
-    "Niterói": (-22.883, -43.104, -22.98, -43.08, "RJ"),
-    "Cabo Frio": (-22.879, -42.019, -23.00, -42.00, "RJ"),
-    "Angra dos Reis": (-23.007, -44.318, -23.12, -44.30, "RJ"),
-    "Santos": (-23.960, -46.333, -24.06, -46.30, "SP"),
-    "Vitória": (-20.315, -40.312, -20.40, -40.25, "ES"),
-    "Salvador": (-12.971, -38.501, -13.05, -38.45, "BA"),
-    "Florianópolis": (-27.595, -48.548, -27.65, -48.40, "SC"),
+# nome -> (lat, lon, lat_mar, lon_mar, UF, código IBGE do município)
+LOCAIS: dict[str, tuple[float, float, float, float, str, int]] = {
+    "Rio de Janeiro · Copacabana": (-22.971, -43.186, -23.05, -43.17, "RJ", 3304557),
+    "Rio de Janeiro · Barra da Tijuca": (-23.012, -43.32, -23.10, -43.32, "RJ", 3304557),
+    "Rio de Janeiro · Centro": (-22.906, -43.173, -23.05, -43.17, "RJ", 3304557),
+    "Niterói": (-22.883, -43.104, -22.98, -43.08, "RJ", 3303302),
+    "Cabo Frio": (-22.879, -42.019, -23.00, -42.00, "RJ", 3300704),
+    "Angra dos Reis": (-23.007, -44.318, -23.12, -44.30, "RJ", 3300100),
+    "Santos": (-23.960, -46.333, -24.06, -46.30, "SP", 3548500),
+    "Vitória": (-20.315, -40.312, -20.40, -40.25, "ES", 3205309),
+    "Salvador": (-12.971, -38.501, -13.05, -38.45, "BA", 2927408),
+    "Florianópolis": (-27.595, -48.548, -27.65, -48.40, "SC", 4205407),
 }
 
 # Cidades exibidas como "bolhas" no mapa
@@ -126,28 +126,23 @@ def radar() -> dict:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def alertas_inmet(uf: str) -> list[dict]:
-    """Avisos meteorológicos ativos do INMET (base dos alertas da Defesa Civil)."""
-    js = _get("https://apiprevmet3.inmet.gov.br/avisos/ativos", timeout=20)
-    if isinstance(js, dict):
-        itens = [i for chave in ("hoje", "futuro") for i in js.get(chave, [])]
-    else:
-        itens = list(js)
+def alertas(uf: str, ibge: int | None = None) -> list[dict]:
+    """Avisos oficiais do INMET (base dos alertas da Defesa Civil) via API pública do RadarMeteorológico."""
+    js = _get("https://radarmeteorologico.com.br/api/v1/alertas", {"uf": uf}, timeout=20)
     saida = []
-    for a in itens:
-        estados = str(a.get("estados") or a.get("estado") or "")
-        if uf not in estados.replace(" ", "").split(",") and uf not in estados:
-            continue
+    for a in js.get("alertas", []):
         saida.append({
-            "titulo": a.get("descricao") or a.get("evento") or "Aviso meteorológico",
-            "severidade": str(a.get("severidade") or a.get("aviso_severidade") or ""),
-            "inicio": a.get("inicio") or a.get("data_inicio") or "",
-            "fim": a.get("fim") or a.get("data_fim") or "",
-            "riscos": a.get("riscos") or [],
-            "instrucoes": a.get("instrucoes") or [],
-            "municipios": a.get("municipios") or a.get("area") or "",
-            "id": a.get("id") or a.get("aviso_id") or "",
+            "titulo": a.get("evento") or "Aviso meteorológico",
+            "severidade": str(a.get("severidade") or ""),
+            "nivel": a.get("nivel") or 0,
+            "inicio": a.get("inicio") or "", "fim": a.get("fim") or "",
+            "futuro": bool(a.get("futuro")),
+            "riscos": a.get("riscos") or [], "instrucoes": a.get("instrucoes") or [],
+            "municipios": a.get("municipios_afetados") or 0,
+            "url": a.get("url") or "",
+            "atinge_local": bool(ibge and ibge in (a.get("geocodes") or [])),
         })
+    saida.sort(key=lambda x: (not x["atinge_local"], x["futuro"], -x["nivel"]))
     return saida
 
 

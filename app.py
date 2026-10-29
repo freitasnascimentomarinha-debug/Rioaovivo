@@ -45,12 +45,12 @@ with st.sidebar:
     if nome == "Personalizado…":
         lat = st.number_input("Latitude", value=-22.97, format="%.4f")
         lon = st.number_input("Longitude", value=-43.19, format="%.4f")
-        lat_m, lon_m, uf = lat, lon, st.text_input("UF (para alertas)", "RJ").upper()
+        lat_m, lon_m, uf, ibge = lat, lon, st.text_input("UF (para alertas)", "RJ").upper(), None
     else:
-        lat, lon, lat_m, lon_m, uf = data.LOCAIS[nome]
+        lat, lon, lat_m, lon_m, uf, ibge = data.LOCAIS[nome]
     st.divider()
     auto = st.toggle("🔄 Atualização automática (5 min)", value=True)
-    st.caption("Fontes: Open-Meteo · RainViewer · INMET/Defesa Civil · OpenStreetMap")
+    st.caption("Fontes: Open-Meteo · RainViewer · INMET via [RadarMeteorológico](https://radarmeteorologico.com.br) · Esri/OSM")
     st.markdown("🚨 **Emergência:** Defesa Civil **199** · Bombeiros **193**")
 
 
@@ -93,14 +93,19 @@ def painel():
 
     # --- Alerta destacado
     try:
-        avisos = data.alertas_inmet(uf)
+        avisos = data.alertas(uf, ibge)
         avisos_ok = True
     except Exception:  # noqa: BLE001
         avisos, avisos_ok = [], False
-    if avisos:
-        st.markdown(f'<div class="alert" style="--c:#fb923c"><span class="badge">ALERTA</span>'
-                    f'<b>{len(avisos)} aviso(s) meteorológico(s) ativo(s) para {uf}</b> — veja a aba “Alertas”.</div>',
+    locais = [x for x in avisos if x["atinge_local"] and not x["futuro"]]
+    if locais:
+        mais = max(locais, key=lambda x: x["nivel"])
+        st.markdown(f'<div class="alert" style="--c:#ef4444"><span class="badge">ALERTA NA SUA CIDADE</span>'
+                    f'<b>{mais["titulo"]} · {mais["severidade"]}</b> até {mais["fim"]} — veja a aba “Alertas”.</div>',
                     unsafe_allow_html=True)
+    elif avisos:
+        st.markdown(f'<div class="alert" style="--c:#fbbf24"><span class="badge">AVISOS</span>'
+                    f'<b>{len(avisos)} aviso(s) no estado ({uf})</b> — veja a aba “Alertas”.</div>', unsafe_allow_html=True)
 
     # --- KPIs
     try:
@@ -293,22 +298,24 @@ def painel():
         style.titulo(f"🚨 Avisos meteorológicos — {uf}")
         cores = {"perigo potencial": "#fbbf24", "perigo": "#fb923c", "grande perigo": "#ef4444"}
         if not avisos_ok:
-            st.warning("Não foi possível consultar o INMET agora. Consulte também o app **Defesa Civil Alerta** "
+            st.warning("Não foi possível consultar os avisos agora. Consulte também o app **Defesa Civil Alerta** "
                        "(SMS **40199**) e o **Alerta Rio** (alertario.rio.rj.gov.br).")
         elif not avisos:
             st.markdown('<div class="alert ok"><span class="badge">OK</span><b>Nenhum aviso ativo</b> do INMET para o estado '
                         f'{uf} neste momento.</div>', unsafe_allow_html=True)
         for a in avisos:
             cor = cores.get(a["severidade"].lower(), "#fb923c")
-            riscos = a["riscos"] if isinstance(a["riscos"], list) else [a["riscos"]]
-            instr = a["instrucoes"] if isinstance(a["instrucoes"], list) else [a["instrucoes"]]
+            tag = "📍 Atinge sua cidade · " if a["atinge_local"] else ""
+            quando = "🔜 Previsto" if a["futuro"] else "🕒 Em vigor"
             st.markdown(f"""<div class="alert" style="--c:{cor}"><div class="h"><span class="badge">{a['severidade'] or 'AVISO'}</span>{a['titulo']}</div>
-                <div class="m">🕒 {a['inicio']} → {a['fim']}</div>
-                <div class="m">{' · '.join(str(x) for x in riscos[:3] if x)}</div></div>""", unsafe_allow_html=True)
-            if instr and any(instr):
+                <div class="m">{tag}{quando}: {a['inicio']} → {a['fim']} · {a['municipios']} municípios</div>
+                <div class="m">{' '.join(a['riscos'][:1])}</div></div>""", unsafe_allow_html=True)
+            if a["instrucoes"]:
                 with st.expander("Orientações de segurança"):
-                    for x in instr:
+                    for x in a["instrucoes"]:
                         st.write("•", x)
+                    if a["url"]:
+                        st.markdown(f"[Ver aviso completo]({a['url']})")
         st.info("📱 Cadastre-se no alerta por SMS da Defesa Civil: envie seu **CEP** para **40199**. Emergência: **199**.")
 
     # ---------------- Mapa
@@ -345,7 +352,7 @@ def painel():
         st_folium(mp, height=560, width="stretch", returned_objects=[], key=f"mapa-{lat}-{lon}")
         st.caption("Radar: RainViewer · Camadas alternáveis no canto superior direito do mapa.")
 
-    st.markdown(f'<div class="footer">Rio ao Vivo · dados atualizados às {agora:%H:%M:%S} · Open-Meteo, RainViewer, INMET</div>',
+    st.markdown(f'<div class="footer">Rio ao Vivo · dados atualizados às {agora:%H:%M:%S} · Open-Meteo · RainViewer · INMET via <a href="https://radarmeteorologico.com.br" style="color:inherit">RadarMeteorológico</a></div>',
                 unsafe_allow_html=True)
 
 

@@ -16,5 +16,5 @@ streamlit run app.py
 3. Não há chaves/segredos: todas as fontes são APIs públicas e gratuitas.
 
 ## Fontes de dados
-Open-Meteo (previsão, marinho, qualidade do ar) · RainViewer (radar) · INMET (avisos) · Esri/OpenStreetMap (mapas).
+Open-Meteo (previsão, marinho, qualidade do ar) · RainViewer (radar) · INMET via RadarMeteorológico (avisos — radarmeteorologico.com.br/api-publica) · Esri/OpenStreetMap (mapas).
 A maré é uma estimativa do modelo global; para navegação use a Tábua de Marés da Marinha (DHN).

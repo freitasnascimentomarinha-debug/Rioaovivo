@@ -211,3 +211,92 @@ def extremos_mare(df: pd.DataFrame, col: str = "nivel") -> pd.DataFrame:
         elif s[i] <= s[i - 1] and s[i] < s[i + 1]:
             linhas.append((df["hora"].iloc[i], s[i], "Baixa-mar"))
     return pd.DataFrame(linhas, columns=["hora", "nivel", "tipo"])
+
+
+# ----------------------------------------------------------------------------- Cidade: chuva, alagamentos, segurança
+ALERTARIO_URL = "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/Geotecnia/Estacoes_AlertaRio/FeatureServer/0/query"
+DESLIZAMENTO_URL = "https://pgeo3.rio.rj.gov.br/arcgis/rest/services/Geotecnia/Suscetibilidade_a_deslizamentos/MapServer"
+
+# Pontos historicamente sujeitos a alagamento no Rio (referência editorial — NÃO é dado em tempo real).
+PONTOS_ALAGAMENTO = {
+    "Praça da Bandeira": (-22.9117, -43.2125),
+    "Vila Isabel · Rio Joana": (-22.9179, -43.2447),
+    "Av. Brasil · Manguinhos/Penha": (-22.8760, -43.2545),
+    "Jacarepaguá · Tanque": (-22.9125, -43.3647),
+    "Barra · Av. Ayrton Senna": (-22.9996, -43.3660),
+    "Av. Dom Hélder Câmara · Pilares": (-22.8863, -43.2756),
+}
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def estacoes_alertario() -> list[dict]:
+    """Estações pluviométricas do Sistema Alerta Rio (localização)."""
+    saida, offset = [], 0
+    while True:
+        js = _get(ALERTARIO_URL, {"where": "1=1", "outFields": "*", "f": "json", "outSR": 4326,
+                                  "resultOffset": offset, "resultRecordCount": 100}, timeout=25)
+        feats = js.get("features", [])
+        for f in feats:
+            at, g = f["attributes"], f.get("geometry") or {}
+            if g:
+                saida.append({"nome": at.get("est") or "Estação", "endereco": at.get("endereço") or "",
+                              "lat": g["y"], "lon": g["x"]})
+        if not js.get("exceededTransferLimit") or not feats:
+            return saida
+        offset += len(feats)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def chuva_estimada(pontos: tuple[tuple[float, float], ...]) -> list[dict]:
+    """Chuva atual e acumulado das próximas 3 h / 6 h para uma lista de pontos (modelo Open-Meteo)."""
+    js = _get("https://api.open-meteo.com/v1/forecast", {
+        "latitude": ",".join(str(p[0]) for p in pontos), "longitude": ",".join(str(p[1]) for p in pontos),
+        "timezone": TZ, "current": "precipitation", "hourly": "precipitation", "forecast_hours": 6}, timeout=25)
+    js = js if isinstance(js, list) else [js]
+    out = []
+    for j in js:
+        h = j["hourly"]["precipitation"]
+        out.append({"agora": j["current"]["precipitation"] or 0, "h3": sum(h[:3]), "h6": sum(h[:6]), "pico": max(h)})
+    return out
+
+
+def intensidade_chuva(mmh: float) -> tuple[str, str]:
+    """Classe de intensidade (mm/h) e cor."""
+    if mmh < 0.1:
+        return "Sem chuva", "#475569"
+    if mmh < 2.5:
+        return "Fraca", "#38bdf8"
+    if mmh < 7.6:
+        return "Moderada", "#facc15"
+    if mmh < 50:
+        return "Forte", "#fb923c"
+    return "Muito forte", "#ef4444"
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def tiroteios(email: str, senha: str, uf: str = "RJ", dias: int = 7) -> list[dict]:
+    """Ocorrências de tiroteio — API Fogo Cruzado v2 (exige cadastro gratuito)."""
+    base = "https://api-service.fogocruzado.org.br/api/v2"
+    r = requests.post(f"{base}/auth/login", json={"email": email, "password": senha}, headers=HEADERS, timeout=20)
+    r.raise_for_status()
+    corpo = r.json()
+    token = (corpo.get("data") or corpo).get("accessToken")
+    auth = {**HEADERS, "Authorization": f"Bearer {token}"}
+    estados = requests.get(f"{base}/states", headers=auth, timeout=20).json().get("data", [])
+    est = next((e for e in estados if uf.lower() in (e.get("name", "").lower(), e.get("abbreviation", "").lower())
+                or e.get("name", "").lower().startswith("rio")), None)
+    ini = (datetime.now(timezone.utc) - timedelta(days=dias)).strftime("%Y-%m-%d")
+    params = {"initialdate": ini, "finaldate": datetime.now(timezone.utc).strftime("%Y-%m-%d"), "take": 100, "order": "DESC"}
+    if est:
+        params["idState"] = est["id"]
+    js = requests.get(f"{base}/occurrences", params=params, headers=auth, timeout=30).json()
+    out = []
+    for o in js.get("data", []):
+        try:
+            out.append({"lat": float(o["latitude"]), "lon": float(o["longitude"]), "data": o.get("date", ""),
+                        "endereco": o.get("address", ""), "bairro": (o.get("neighborhood") or {}).get("name", ""),
+                        "cidade": (o.get("city") or {}).get("name", ""),
+                        "policia": bool(o.get("policeAction")), "mortos": len([v for v in o.get("victims", []) if "dead" in str(v.get("situation", "")).lower() or "morto" in str(v.get("situation", "")).lower()])})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out

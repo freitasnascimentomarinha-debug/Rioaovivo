@@ -4,6 +4,10 @@ Painel meteorológico em tempo real feito com **Streamlit** — visual glassmorp
 
 **Recursos:** temperatura e condição atual · previsão 48 h / 7 dias · umidade · vento (direção, rajadas, rosa dos ventos) · precipitação · pressão · UV · qualidade do ar · nascer/pôr do sol e trajetória solar · fase da lua · maré e ondas · avisos INMET/Defesa Civil · mapa com radar, satélite e temperaturas por cidade.
 
+## Abas extras
+🚦 Trânsito (Waze) · ⛈️ Alagamentos (estações Alerta Rio + deslizamentos GeoRio) · 🛡️ Segurança (Fogo Cruzado, opcional).
+Segredos opcionais: veja `.streamlit/secrets.toml.example`.
+
 ## Rodar localmente
 ```bash
 pip install -r requirements.txt

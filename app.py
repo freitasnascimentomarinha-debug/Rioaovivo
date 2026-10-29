@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from streamlit_folium import st_folium
 
+import cidade as cid
 import data
 import style
 
@@ -51,6 +52,8 @@ with st.sidebar:
     st.divider()
     auto = st.toggle("🔄 Atualização automática (5 min)", value=True)
     st.caption("Fontes: Open-Meteo · RainViewer · INMET via [RadarMeteorológico](https://radarmeteorologico.com.br) · Esri/OSM")
+    from urllib.parse import quote
+    st.link_button("📲 Compartilhar no WhatsApp", "https://wa.me/?text=" + quote("🌊 Rio ao Vivo — clima, chuva, trânsito e alertas em tempo real: https://rioaovivo.streamlit.app"), width="stretch")
     st.markdown("🚨 **Emergência:** Defesa Civil **199** · Bombeiros **193**")
 
 
@@ -156,7 +159,8 @@ def painel():
             style.kpi("🍃", "Qualidade do ar", "—", "", "Indisponível")
     st.write("")
 
-    tabs = st.tabs(["📈 Previsão", "🌧️ Chuva & Vento", "🌊 Maré", "🌙 Sol & Lua", "🚨 Alertas", "🗺️ Mapa"])
+    tabs = st.tabs(["📈 Previsão", "🌧️ Chuva & Vento", "🌊 Maré", "🌙 Sol & Lua", "🚨 Alertas", "🗺️ Mapa",
+                    "🚦 Trânsito", "⛈️ Alagamentos", "🛡️ Segurança"])
 
     # ---------------- Previsão
     with tabs[0]:
@@ -371,6 +375,11 @@ def painel():
                              opacity=.75, overlay=True, max_native_zoom=7, max_zoom=12).add_to(mp)
         except Exception:  # noqa: BLE001
             st.caption("Radar indisponível no momento.")
+        try:  # camada opcional de trânsito (TomTom) — exige TOMTOM_KEY nos secrets
+            folium.TileLayer(f"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{{z}}/{{x}}/{{y}}.png?key={st.secrets['TOMTOM_KEY']}",
+                             attr="TomTom", name="🚦 Trânsito", overlay=True, show=False, max_native_zoom=18).add_to(mp)
+        except Exception:  # noqa: BLE001
+            pass
         grupo = folium.FeatureGroup(name="🌡️ Temperaturas")
         try:
             for t in data.temperaturas_mapa():
@@ -388,6 +397,20 @@ def painel():
         folium.LayerControl(collapsed=False).add_to(mp)
         st_folium(mp, height=560, width="stretch", returned_objects=[], key=f"mapa-{lat}-{lon}")
         st.caption("Radar: RainViewer · Camadas alternáveis no canto superior direito do mapa.")
+
+    with tabs[6]:
+        cid.transito(lat, lon, nome)
+    with tabs[7]:
+        if ibge == 3304557:
+            cid.alagamentos()
+        else:
+            st.info("O monitor de chuva por estação e alagamentos está disponível para o município do Rio de Janeiro. "
+                    "Selecione uma localização do Rio no menu lateral.")
+    with tabs[8]:
+        if uf == "RJ":
+            cid.seguranca(lat, lon, uf)
+        else:
+            st.info("A camada de tiroteios (Fogo Cruzado) cobre a Região Metropolitana do Rio de Janeiro.")
 
     st.markdown(f'<div class="footer">Rio ao Vivo · dados atualizados às {agora:%H:%M:%S} · Open-Meteo · RainViewer · INMET via <a href="https://radarmeteorologico.com.br" style="color:inherit">RadarMeteorológico</a></div>',
                 unsafe_allow_html=True)

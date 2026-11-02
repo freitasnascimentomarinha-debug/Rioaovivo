@@ -52,34 +52,39 @@ def hora_a_hora(h: pd.DataFrame, d: pd.DataFrame, idx: int, agora: datetime):
         st.info("Sem horas restantes para hoje.")
         return
     nascer, por = pd.to_datetime(dia["sunrise"]), pd.to_datetime(dia["sunset"])
-    k = st.columns(4)
-    with k[0]:
-        style.kpi("🌡️", "Temperatura", f"{sel['temperature_2m'].max():.0f}°", "", f"mín {sel['temperature_2m'].min():.0f}°")
-    with k[1]:
-        style.kpi("🌧️", "Chuva no período", f"{sel['precipitation'].sum():.1f}", "mm", f"chance máx. {sel['precipitation_probability'].max():.0f}%")
-    with k[2]:
-        style.kpi("🌬️", "Vento máx.", f"{sel['wind_speed_10m'].max():.0f}", "km/h", f"rajada {sel['wind_gusts_10m'].max():.0f}")
-    with k[3]:
-        style.kpi("🌅", "Sol", f"{nascer:%H:%M}", "", f"pôr do sol {por:%H:%M}")
+    chip = ("display:inline-block;margin:0 8px 8px 0;padding:8px 14px;border-radius:14px;background:rgba(30,41,67,.7);"
+            "border:1px solid rgba(148,163,184,.25);font-size:14px;color:#e2e8f0")
+    resumo = [f"🌡️ <b>{sel['temperature_2m'].max():.0f}°</b> / {sel['temperature_2m'].min():.0f}°",
+              f"🌧️ <b>{sel['precipitation'].sum():.1f} mm</b> · até {sel['precipitation_probability'].max():.0f}%",
+              f"🌬️ <b>{sel['wind_speed_10m'].max():.0f} km/h</b> · rajada {sel['wind_gusts_10m'].max():.0f}",
+              f"🌅 {nascer:%H:%M} · 🌇 {por:%H:%M}"]
+    st.markdown("".join(f'<span style="{chip}">{x}</span>' for x in resumo), unsafe_allow_html=True)
     fig = go.Figure()
     fig.add_bar(x=sel["time"], y=sel["precipitation_probability"], name="Chance de chuva (%)", yaxis="y2", marker_color="rgba(56,189,248,.28)")
     fig.add_scatter(x=sel["time"], y=sel["temperature_2m"], name="Temperatura (°C)", line=dict(color=AMBAR, width=3, shape="spline"))
     fig.update_layout(yaxis2=dict(overlaying="y", side="right", range=[0, 100], showgrid=False, ticksuffix="%"), yaxis=dict(ticksuffix="°"))
     fig.update_xaxes(tickformat="%Hh")
     st.plotly_chart(estilo_fig(fig, 260), width="stretch", key=f"fig_horas_{i}")
+    # estilos inline: não dependem do CSS global (evita cartões "soltos" se a página estiver em cache)
+    card = ("flex:0 0 88px;text-align:center;padding:12px 6px;border-radius:18px;background:rgba(30,41,67,.7);"
+            "border:1px solid rgba(148,163,184,.25);font-size:13px;line-height:1.35;color:#e2e8f0;box-sizing:border-box")
     cards = []
     for _, r in sel.iterrows():
         dia_sol = nascer <= r["time"] <= por
         txt, em = data.descricao(r["weather_code"], dia_sol)
-        seta = f'<span class="arrow" style="transform:rotate({r["wind_direction_10m"] + 180}deg)">➤</span>'
-        cards.append(f'<div class="hr{" now" if r["time"] == agora_n else ""}" title="{txt}"><div class="t">{r["time"]:%Hh}</div>'
-                     f'<div class="e">{em}</div><div class="c">{r["temperature_2m"]:.0f}°</div>'
-                     f'<div class="r">💧 {r["precipitation_probability"]:.0f}%</div>'
-                     f'<div class="w">{r["precipitation"]:.1f} mm</div>'
-                     f'<div class="w">{seta} {r["wind_speed_10m"]:.0f} km/h</div>'
-                     f'<div class="w">UR {r["relative_humidity_2m"]:.0f}%</div></div>')
-    st.markdown('<div class="hours">' + "".join(cards) + "</div>", unsafe_allow_html=True)
-    st.caption("Deslize para o lado para ver todas as horas. Passe o mouse no ícone para ver a condição do tempo.")
+        seta = f'<span style="display:inline-block;color:#38bdf8;transform:rotate({r["wind_direction_10m"] + 180}deg)">➤</span>'
+        destaque = "border:1px solid #38bdf8;box-shadow:0 0 0 1px #38bdf8 inset;" if r["time"] == agora_n else ""
+        cards.append(f'<div title="{txt}" style="{card};{destaque}"><div style="font-weight:700;opacity:.85">{r["time"]:%Hh}</div>'
+                     f'<div style="font-size:27px;margin:4px 0">{em}</div>'
+                     f'<div style="font-size:18px;font-weight:800">{r["temperature_2m"]:.0f}°</div>'
+                     f'<div style="color:#7dd3fc;margin-top:4px">💧 {r["precipitation_probability"]:.0f}%</div>'
+                     f'<div style="opacity:.65;font-size:12px">{r["precipitation"]:.1f} mm</div>'
+                     f'<div style="opacity:.65;font-size:12px">{seta} {r["wind_speed_10m"]:.0f} km/h</div>'
+                     f'<div style="opacity:.65;font-size:12px">UR {r["relative_humidity_2m"]:.0f}%</div></div>')
+    st.markdown('<div style="display:flex;flex-direction:row;gap:10px;overflow-x:auto;padding:6px 2px 14px;'
+                'scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch">' + "".join(cards) + "</div>",
+                unsafe_allow_html=True)
+    st.caption("Deslize os cartões para o lado para ver todas as horas.")
 
 
 # ----------------------------------------------------------------------------- Sidebar

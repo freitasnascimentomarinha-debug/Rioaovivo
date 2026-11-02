@@ -367,3 +367,20 @@ def onibus() -> pd.DataFrame:
     df["datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce")
     df = df.sort_values("datetime").drop_duplicates("id_veiculo", keep="last")
     return df.rename(columns={"latitude": "lat", "longitude": "lon"}).reset_index(drop=True)
+
+
+# ----------------------------------------------------------------------------- COR Rio (estágio da cidade)
+@st.cache_data(ttl=300, show_spinner=False)
+def estagio_cor() -> dict:
+    """Estágio de operações e nível de calor da cidade do Rio — mesmos endpoints usados pelo site cor.rio."""
+    js = _get("https://appcor.cor-rio.work/estagio_cidade", timeout=15)
+    out = {"estagio": js.get("estagio") or "", "cor": js.get("cor") or "#228d46",
+           "mensagem": " ".join(x for x in (js.get("mensagem"), js.get("mensagem2")) if x), "inicio": js.get("inicio") or "",
+           "calor": None}
+    try:
+        r = requests.get("https://appcor.cor-rio.work/calor_api", params={"formato": "texto"}, headers=HEADERS, timeout=10)
+        digitos = "".join(ch for ch in r.text if ch.isdigit())
+        out["calor"] = int(digitos) if digitos else None
+    except (requests.RequestException, ValueError):
+        pass
+    return out

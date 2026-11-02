@@ -129,6 +129,24 @@ def painel():
     nascer, por = pd.to_datetime(hoje["sunrise"]), pd.to_datetime(hoje["sunset"])
     idx_h = int((h["time"] - agora.replace(tzinfo=None)).abs().idxmin())
 
+    # --- Estágio da cidade (COR Rio) — só para o município do Rio
+    pilulas_cor = ""
+    if ibge == 3304557:
+        try:
+            cor = data.estagio_cor()
+            pil = ("display:inline-flex;align-items:center;gap:8px;margin:12px 8px 0 0;padding:6px 14px;border-radius:999px;"
+                   "background:rgba(15,23,42,.55);border:1px solid rgba(255,255,255,.25);font-weight:700;font-size:.9rem")
+            pilulas_cor = (f'<a href="https://cor.rio/" target="_blank" style="text-decoration:none;color:inherit" '
+                           f'title="Estágio de operações da cidade — Centro de Operações Rio"><span style="{pil}">'
+                           f'<span style="width:11px;height:11px;border-radius:50%;background:{cor["cor"]};box-shadow:0 0 10px {cor["cor"]}"></span>'
+                           f'Cidade em {cor["estagio"]}</span></a>')
+            if cor["calor"]:
+                pilulas_cor += f'<span style="{pil}">🌡️ Nível de calor {cor["calor"]}</span>'
+            if cor["mensagem"]:
+                pilulas_cor += f'<div style="font-size:.85rem;opacity:.85;margin-top:8px;max-width:520px">{cor["mensagem"]}</div>'
+        except Exception:  # noqa: BLE001
+            pilulas_cor = ""
+
     # --- Hero
     st.markdown(f"""
     <div class="hero">
@@ -136,7 +154,7 @@ def painel():
         <span class="live"><i></i>AO VIVO</span>
         <div class="local" style="margin-top:14px">📍 {nome if nome != 'Personalizado…' else f'{lat:.2f}, {lon:.2f}'}</div>
         <div class="temp">{c['temperature_2m']:.0f}°</div>
-        <div class="cond">{txt} · sensação {c['apparent_temperature']:.0f}° · máx {hoje['temperature_2m_max']:.0f}° / mín {hoje['temperature_2m_min']:.0f}°</div>
+        <div class="cond">{txt} · sensação {c['apparent_temperature']:.0f}° · máx {hoje['temperature_2m_max']:.0f}° / mín {hoje['temperature_2m_min']:.0f}°</div>{pilulas_cor}
         <div style="opacity:.6;font-size:.82rem;margin-top:8px">Atualizado às {agora:%H:%M} · {DIAS[agora.weekday()]}, {agora:%d/%m/%Y}</div>
       </div>
       <div class="emoji">{emoji}</div>

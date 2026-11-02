@@ -141,6 +141,7 @@ def painel():
       </div>
       <div class="emoji">{emoji}</div>
     </div>""", unsafe_allow_html=True)
+    st.markdown('<div style="height:14px"></div>', unsafe_allow_html=True)
     if st.button("🕐 Ver previsão hora a hora", key="hr_top", type="primary"):
         hora_a_hora(h, d, 0, agora)
     st.write("")
@@ -237,6 +238,7 @@ def painel():
                 <div class="e">{em}</div><div class="t">{r['temperature_2m_max']:.0f}° <span>{r['temperature_2m_min']:.0f}°</span></div>
                 <div class="r">💧 {r['precipitation_probability_max']:.0f}% · {r['precipitation_sum']:.1f} mm</div></div>""",
                             unsafe_allow_html=True)
+                st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
                 if st.button("🕐 Horas", key=f"hr_dia_{n_dia}", width="stretch"):
                     hora_a_hora(h, d, n_dia, agora)
 

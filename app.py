@@ -38,6 +38,50 @@ def linha_agora(fig: go.Figure, agora: datetime):
                   annotation_text="agora", annotation_font_color="#f472b6")
 
 
+@st.dialog("🕐 Previsão hora a hora", width="large")
+def hora_a_hora(h: pd.DataFrame, d: pd.DataFrame, idx: int, agora: datetime):
+    rotulos = ["Hoje" if i == 0 else "Amanhã" if i == 1 else f"{DIAS[t.weekday()]} {t:%d/%m}" for i, t in enumerate(d["time"])]
+    esc = st.segmented_control("Dia", rotulos, default=rotulos[idx], key=f"dia_horas_{idx}") or rotulos[idx]
+    i = rotulos.index(esc)
+    dia = d.iloc[i]
+    sel = h[h["time"].dt.date == dia["time"].date()].copy()
+    agora_n = agora.replace(tzinfo=None, minute=0, second=0, microsecond=0)
+    if i == 0:
+        sel = sel[sel["time"] >= agora_n]
+    if sel.empty:
+        st.info("Sem horas restantes para hoje.")
+        return
+    nascer, por = pd.to_datetime(dia["sunrise"]), pd.to_datetime(dia["sunset"])
+    k = st.columns(4)
+    with k[0]:
+        style.kpi("🌡️", "Temperatura", f"{sel['temperature_2m'].max():.0f}°", "", f"mín {sel['temperature_2m'].min():.0f}°")
+    with k[1]:
+        style.kpi("🌧️", "Chuva no período", f"{sel['precipitation'].sum():.1f}", "mm", f"chance máx. {sel['precipitation_probability'].max():.0f}%")
+    with k[2]:
+        style.kpi("🌬️", "Vento máx.", f"{sel['wind_speed_10m'].max():.0f}", "km/h", f"rajada {sel['wind_gusts_10m'].max():.0f}")
+    with k[3]:
+        style.kpi("🌅", "Sol", f"{nascer:%H:%M}", "", f"pôr do sol {por:%H:%M}")
+    fig = go.Figure()
+    fig.add_bar(x=sel["time"], y=sel["precipitation_probability"], name="Chance de chuva (%)", yaxis="y2", marker_color="rgba(56,189,248,.28)")
+    fig.add_scatter(x=sel["time"], y=sel["temperature_2m"], name="Temperatura (°C)", line=dict(color=AMBAR, width=3, shape="spline"))
+    fig.update_layout(yaxis2=dict(overlaying="y", side="right", range=[0, 100], showgrid=False, ticksuffix="%"), yaxis=dict(ticksuffix="°"))
+    fig.update_xaxes(tickformat="%Hh")
+    st.plotly_chart(estilo_fig(fig, 260), width="stretch", key=f"fig_horas_{i}")
+    cards = []
+    for _, r in sel.iterrows():
+        dia_sol = nascer <= r["time"] <= por
+        txt, em = data.descricao(r["weather_code"], dia_sol)
+        seta = f'<span class="arrow" style="transform:rotate({r["wind_direction_10m"] + 180}deg)">➤</span>'
+        cards.append(f'<div class="hr{" now" if r["time"] == agora_n else ""}" title="{txt}"><div class="t">{r["time"]:%Hh}</div>'
+                     f'<div class="e">{em}</div><div class="c">{r["temperature_2m"]:.0f}°</div>'
+                     f'<div class="r">💧 {r["precipitation_probability"]:.0f}%</div>'
+                     f'<div class="w">{r["precipitation"]:.1f} mm</div>'
+                     f'<div class="w">{seta} {r["wind_speed_10m"]:.0f} km/h</div>'
+                     f'<div class="w">UR {r["relative_humidity_2m"]:.0f}%</div></div>')
+    st.markdown('<div class="hours">' + "".join(cards) + "</div>", unsafe_allow_html=True)
+    st.caption("Deslize para o lado para ver todas as horas. Passe o mouse no ícone para ver a condição do tempo.")
+
+
 # ----------------------------------------------------------------------------- Sidebar
 with st.sidebar:
     st.markdown("## 🌊 Rio ao Vivo")
@@ -92,6 +136,8 @@ def painel():
       </div>
       <div class="emoji">{emoji}</div>
     </div>""", unsafe_allow_html=True)
+    if st.button("🕐 Ver previsão hora a hora", key="hr_top", type="primary"):
+        hora_a_hora(h, d, 0, agora)
     st.write("")
 
     # --- Alerta destacado
@@ -179,13 +225,15 @@ def painel():
 
         style.titulo("Próximos 7 dias")
         cols = st.columns(7)
-        for col, (_, r) in zip(cols, d.iterrows()):
+        for n_dia, (col, (_, r)) in enumerate(zip(cols, d.iterrows())):
             _, em = data.descricao(r["weather_code"])
             with col:
                 st.markdown(f"""<div class="glass day"><div class="d">{DIAS[r['time'].weekday()]} {r['time']:%d}</div>
                 <div class="e">{em}</div><div class="t">{r['temperature_2m_max']:.0f}° <span>{r['temperature_2m_min']:.0f}°</span></div>
                 <div class="r">💧 {r['precipitation_probability_max']:.0f}% · {r['precipitation_sum']:.1f} mm</div></div>""",
                             unsafe_allow_html=True)
+                if st.button("🕐 Horas", key=f"hr_dia_{n_dia}", width="stretch"):
+                    hora_a_hora(h, d, n_dia, agora)
 
     # ---------------- Chuva & vento
     with tabs[1]:

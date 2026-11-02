@@ -76,6 +76,13 @@ section[data-testid="stSidebar"] { background: rgba(10,15,30,.85); border-right:
 .stTabs [data-baseweb="tab"] { border-radius:12px; padding:8px 16px; height:auto; font-weight:600; }
 .stTabs [aria-selected="true"] { background:linear-gradient(135deg,#0ea5e9,#6366f1); color:#fff !important; }
 .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] { display:none; }
+.hours { display:flex; gap:10px; overflow-x:auto; padding:6px 2px 14px; scroll-snap-type:x proximity; }
+.hours::-webkit-scrollbar { height:8px; } .hours::-webkit-scrollbar-thumb { background:rgba(148,163,184,.35); border-radius:99px; }
+.hr { flex:0 0 86px; scroll-snap-align:start; text-align:center; padding:12px 6px; border-radius:18px; background:rgba(30,41,67,.6);
+  border:1px solid rgba(148,163,184,.16); font-size:.82rem; }
+.hr.now { border-color:#38bdf8; box-shadow:0 0 0 1px #38bdf8 inset; }
+.hr .t { font-weight:700; opacity:.85; } .hr .e { font-size:1.7rem; margin:4px 0; } .hr .c { font-size:1.15rem; font-weight:800; }
+.hr .r { color:#7dd3fc; margin-top:4px; } .hr .w { opacity:.65; margin-top:2px; font-size:.76rem; }
 .footer { text-align:center; opacity:.45; font-size:.78rem; margin:34px 0 8px; }
 iframe { border-radius: 20px; }
 </style>
